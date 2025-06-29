@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Interactive 2D Rectangle Packing Visualization with Streamlit
+Interactive 2D Rectangle Packing Visualization with Streamlit - Fixed Version
 """
 
 import streamlit as st
@@ -15,7 +15,6 @@ from contextlib import redirect_stdout, redirect_stderr
 # Import the packing framework
 from src.core.problem import PackingProblem
 from src.solvers.hybrid_solver import HybridSolver
-from src.visualization.plotter import visualize_solution
 
 # Configure Streamlit page
 st.set_page_config(
@@ -78,7 +77,6 @@ def create_enhanced_visualization(solution, problem):
     
     # Generate distinct colors for tiles
     if solution.tile_positions:
-        # Use a more vibrant color palette
         colors = plt.cm.Set1(np.linspace(0, 1, len(solution.tile_positions)))
     else:
         colors = []
@@ -115,9 +113,9 @@ def create_enhanced_visualization(solution, problem):
     
     # Title and labels
     efficiency_text = f"{solution.efficiency:.1f}%" if solution.num_tiles > 0 else "0%"
-    title = f"📦 Packing Solution: {solution.num_tiles} tiles (Efficiency: {efficiency_text})"
+    title = f"Packing Solution: {solution.num_tiles} tiles (Efficiency: {efficiency_text})"
     if solution.solver_name != "unknown":
-        title += f"\n🔧 Solver: {solution.solver_name}"
+        title += f"\nSolver: {solution.solver_name}"
     
     ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
     ax.set_xlabel('X Position', fontsize=12, fontweight='bold')
@@ -153,6 +151,7 @@ def main():
     
     # Header
     st.markdown('<h1 class="main-header">📦 2D Rectangle Packing Visualizer</h1>', unsafe_allow_html=True)
+    st.markdown("### Interactive optimization of rectangle packing problems")
     st.markdown("---")
     
     # Sidebar for inputs
@@ -170,29 +169,49 @@ def main():
         st.subheader("Solver Options")
         allow_rotation = st.checkbox("Allow Rotation", value=True)
         time_limit = st.slider("Time Limit (seconds)", min_value=5, max_value=120, value=60, step=5)
+        find_all_solutions = st.checkbox("Find All Optimal Solutions", value=False, help="Find multiple optimal arrangements (may take longer)")
+        max_solutions = st.slider("Max Solutions", min_value=1, max_value=50, value=20, step=5, disabled=not find_all_solutions)
+        
+        if find_all_solutions:
+            deduplicate_symmetric = st.checkbox("Remove Symmetric/Rotated Duplicates", value=True, 
+                                              help="Filter out solutions that are just rotations or mirror images of each other")
         
         # Preset examples
         st.subheader("📋 Preset Examples")
-        if st.button("40×40 with 24×16 (Pinwheel)"):
-            st.session_state.container_w = 40
-            st.session_state.container_h = 40
-            st.session_state.tile_w = 24
-            st.session_state.tile_h = 16
-            st.experimental_rerun()
-            
-        if st.button("40×48 with 12×16"):
-            st.session_state.container_w = 40
-            st.session_state.container_h = 48
-            st.session_state.tile_w = 12
-            st.session_state.tile_h = 16
-            st.experimental_rerun()
-            
-        if st.button("40×48 with 10×10"):
-            st.session_state.container_w = 40
-            st.session_state.container_h = 48
-            st.session_state.tile_w = 10
-            st.session_state.tile_h = 10
-            st.experimental_rerun()
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("Pinwheel\n40×40, 24×16", use_container_width=True):
+                st.session_state.container_w = 40
+                st.session_state.container_h = 40
+                st.session_state.tile_w = 24
+                st.session_state.tile_h = 16
+                st.rerun()
+                
+        with col2:
+            if st.button("Optimal\n40×48, 12×16", use_container_width=True):
+                st.session_state.container_w = 40
+                st.session_state.container_h = 48
+                st.session_state.tile_w = 12
+                st.session_state.tile_h = 16
+                st.rerun()
+                
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Square Pack\n40×48, 10×10", use_container_width=True):
+                st.session_state.container_w = 40
+                st.session_state.container_h = 48
+                st.session_state.tile_w = 10
+                st.session_state.tile_h = 10
+                st.rerun()
+                
+        with col2:
+            if st.button("Multi-Solution\n40×48, 8×10", use_container_width=True):
+                st.session_state.container_w = 40
+                st.session_state.container_h = 48
+                st.session_state.tile_w = 8
+                st.session_state.tile_h = 10
+                st.rerun()
     
     # Main content area
     col1, col2 = st.columns([2, 1])
@@ -218,41 +237,106 @@ def main():
                     allow_rotation=allow_rotation
                 )
                 
+                # Show problem info
+                st.info(f"📊 Problem: Pack {tile_w}×{tile_h} tiles in {container_w}×{container_h} container (Max: {problem.theoretical_max_tiles} tiles)")
+                
                 # Solve with progress tracking
                 solver = HybridSolver(time_limit=time_limit)
                 
                 with st.spinner("🔄 Solving packing problem..."):
                     start_time = time.time()
-                    solution, stdout_logs, stderr_logs = capture_solver_output(solver, problem)
-                    solve_time = time.time() - start_time
+                    
+                    if find_all_solutions:
+                        # Find all optimal solutions
+                        stdout_buffer = io.StringIO()
+                        with redirect_stdout(stdout_buffer):
+                            if deduplicate_symmetric:
+                                solutions = solver.solve_all_optimal(problem, max_solutions)
+                            else:
+                                # Force backtracking solver to get raw solutions without deduplication
+                                from src.solvers.backtrack_solver import BacktrackSolver
+                                raw_solver = BacktrackSolver(max_solutions=max_solutions, time_limit=time_limit//2)
+                                solutions = raw_solver.solve_all_optimal(problem, max_solutions)
+                        stdout_logs = stdout_buffer.getvalue()
+                        
+                        if solutions:
+                            solution = solutions[0]  # Primary solution for metrics
+                            solve_time = time.time() - start_time
+                            
+                            st.success(f"✅ Found {len(solutions)} optimal solution(s) with {solution.num_tiles} tiles ({solution.efficiency:.1f}% efficiency)!")
+                        else:
+                            solution = None
+                            solutions = []
+                            solve_time = time.time() - start_time
+                            st.warning("⚠️ No optimal solutions found!")
+                    else:
+                        # Find single best solution
+                        solution, stdout_logs, stderr_logs = capture_solver_output(solver, problem)
+                        solutions = [solution] if solution.num_tiles > 0 else []
+                        solve_time = time.time() - start_time
+                        
+                        if solution.num_tiles > 0:
+                            st.success(f"✅ Found solution with {solution.num_tiles} tiles ({solution.efficiency:.1f}% efficiency)!")
+                        else:
+                            st.warning("⚠️ No valid packing found!")
                 
                 # Store results in session state
                 st.session_state.solution = solution
+                st.session_state.solutions = solutions
                 st.session_state.problem = problem
                 st.session_state.logs = stdout_logs
                 st.session_state.solve_time = solve_time
-                
-                st.success("✅ Packing problem solved successfully!")
+                if find_all_solutions:
+                    st.session_state.deduplicate_symmetric = deduplicate_symmetric
                 
             except Exception as e:
                 st.error(f"❌ Error solving problem: {str(e)}")
                 return
         
         # Display visualization if solution exists
-        if hasattr(st.session_state, 'solution') and st.session_state.solution:
-            solution = st.session_state.solution
+        if hasattr(st.session_state, 'solutions') and st.session_state.solutions:
+            solutions = st.session_state.solutions
             problem = st.session_state.problem
             
-            # Create enhanced visualization
-            fig = create_enhanced_visualization(solution, problem)
-            st.pyplot(fig, use_container_width=True)
-            plt.close(fig)  # Clean up memory
+            if len(solutions) == 1:
+                # Single solution display
+                try:
+                    fig = create_enhanced_visualization(solutions[0], problem)
+                    st.pyplot(fig, use_container_width=True)
+                    plt.close(fig)
+                except Exception as e:
+                    st.error(f"❌ Visualization error: {str(e)}")
+            else:
+                # Multiple solutions display
+                st.subheader(f"🎯 All {len(solutions)} Optimal Solutions")
+                
+                # Solution selector
+                solution_idx = st.selectbox(
+                    "Select Solution to View:",
+                    range(len(solutions)),
+                    format_func=lambda x: f"Solution {x+1}" + (f" - {solutions[x].solver_name}" if hasattr(solutions[x], 'solver_name') else "")
+                )
+                
+                # Display selected solution
+                try:
+                    selected_solution = solutions[solution_idx]
+                    fig = create_enhanced_visualization(selected_solution, problem)
+                    st.pyplot(fig, use_container_width=True)
+                    plt.close(fig)
+                    
+                    # Show differences between solutions
+                    st.info(f"📍 **Solution {solution_idx+1}**: {selected_solution.num_tiles} tiles, "
+                           f"bounding box: {selected_solution.bounding_box}")
+                    
+                except Exception as e:
+                    st.error(f"❌ Visualization error: {str(e)}")
     
     with col2:
         st.subheader("📊 Results & Metrics")
         
-        if hasattr(st.session_state, 'solution') and st.session_state.solution:
-            solution = st.session_state.solution
+        if hasattr(st.session_state, 'solutions') and st.session_state.solutions:
+            solutions = st.session_state.solutions
+            solution = solutions[0]  # Primary solution for metrics
             problem = st.session_state.problem
             
             # Key Metrics Cards
@@ -267,46 +351,70 @@ def main():
                 
             with col_b:
                 efficiency = solution.efficiency
+                delta_label = "Optimal" if efficiency >= 95 else "Sub-optimal"
                 st.metric(
                     label="⚡ Efficiency",
                     value=f"{efficiency:.1f}%",
-                    delta="Optimal" if efficiency >= 95 else "Sub-optimal"
+                    delta=delta_label
                 )
             
-            # Additional metrics
-            st.markdown("### 📈 Detailed Metrics")
-            
-            metrics_data = {
-                "Container Size": f"{problem.container_w} × {problem.container_h}",
-                "Tile Size": f"{problem.tile_w} × {problem.tile_h}",
-                "Container Area": f"{problem.container_area} units²",
-                "Tile Area": f"{problem.tile_area} units²",
-                "Used Area": f"{solution.num_tiles * problem.tile_area} units²",
-                "Wasted Area": f"{problem.container_area - (solution.num_tiles * problem.tile_area)} units²",
-                "Rotation Allowed": "✅ Yes" if problem.allow_rotation else "❌ No",
-                "Solver Used": solution.solver_name,
-                "Solve Time": f"{solution.solve_time:.3f}s"
-            }
-            
-            for label, value in metrics_data.items():
-                st.text(f"{label}: {value}")
+            # Additional metrics in expandable section
+            with st.expander("📈 Detailed Metrics", expanded=True):
+                metrics_data = {
+                    "Container Size": f"{problem.container_w} × {problem.container_h}",
+                    "Tile Size": f"{problem.tile_w} × {problem.tile_h}",
+                    "Container Area": f"{problem.container_area:,} units²",
+                    "Tile Area": f"{problem.tile_area} units²",
+                    "Used Area": f"{solution.num_tiles * problem.tile_area:,} units²",
+                    "Wasted Area": f"{problem.container_area - (solution.num_tiles * problem.tile_area):,} units²",
+                    "Rotation Allowed": "✅ Yes" if problem.allow_rotation else "❌ No",
+                    "Solver Used": solution.solver_name,
+                    "Solve Time": f"{solution.solve_time:.3f}s"
+                }
+                
+                for label, value in metrics_data.items():
+                    st.text(f"{label}: {value}")
             
             # Tile positions table
             if solution.tile_positions:
-                st.markdown("### 📋 Tile Positions")
+                with st.expander("📋 Tile Positions"):
+                    
+                    tile_data = []
+                    for i, (x, y, w, h, orientation) in enumerate(solution.tile_positions):
+                        tile_data.append({
+                            "Tile": f"T{i+1}",
+                            "X": x,
+                            "Y": y,
+                            "Width": w,
+                            "Height": h,
+                            "Orientation": orientation
+                        })
+                    
+                    st.dataframe(tile_data, use_container_width=True)
+            
+            # Multiple solutions summary
+            if len(solutions) > 1:
+                st.markdown("### 🔄 All Solutions Summary")
                 
-                tile_data = []
-                for i, (x, y, w, h, orientation) in enumerate(solution.tile_positions):
-                    tile_data.append({
-                        "Tile": f"T{i+1}",
-                        "X": x,
-                        "Y": y,
-                        "Width": w,
-                        "Height": h,
-                        "Orientation": orientation
+                solutions_data = []
+                for i, sol in enumerate(solutions):
+                    bbox = sol.bounding_box
+                    used_w = bbox[2] - bbox[0] if bbox else 0
+                    used_h = bbox[3] - bbox[1] if bbox else 0
+                    
+                    solutions_data.append({
+                        "Solution": f"#{i+1}",
+                        "Tiles": sol.num_tiles,
+                        "Efficiency": f"{sol.efficiency:.1f}%",
+                        "Bounding Box": f"{used_w}×{used_h}",
+                        "Solver": getattr(sol, 'solver_name', 'Unknown'),
+                        "Centered": "✅" if getattr(sol, 'is_centered', False) else "❌"
                     })
                 
-                st.dataframe(tile_data, use_container_width=True)
+                st.dataframe(solutions_data, use_container_width=True)
+                
+                dedup_status = "after removing symmetric duplicates" if hasattr(st.session_state, 'deduplicate_symmetric') and st.session_state.get('deduplicate_symmetric', True) else "including symmetric variations"
+                st.info(f"💡 Found {len(solutions)} different ways to achieve {solution.num_tiles} tiles with {solution.efficiency:.1f}% efficiency ({dedup_status})!")
         
         else:
             st.info("👆 Configure parameters and click 'Solve Packing Problem' to see results!")
@@ -317,10 +425,7 @@ def main():
         st.subheader("🔍 Solver Logs")
         
         with st.expander("📜 View Detailed Solver Output", expanded=False):
-            st.markdown(
-                f'<div class="log-container">{st.session_state.logs}</div>',
-                unsafe_allow_html=True
-            )
+            st.code(st.session_state.logs, language='text')
     
     # Footer
     st.markdown("---")
@@ -336,3 +441,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
