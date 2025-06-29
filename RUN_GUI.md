@@ -9,12 +9,12 @@ pip install -r requirements.txt
 
 ### 2. Run the Streamlit GUI
 ```bash
-streamlit run streamlit_app_fixed.py
+streamlit run streamlit_app.py
 ```
 
 Or with custom settings:
 ```bash
-streamlit run streamlit_app_fixed.py --server.port=8501 --server.address=0.0.0.0
+streamlit run streamlit_app.py --server.port=8501 --server.address=0.0.0.0
 ```
 
 ### 3. Open in Browser
