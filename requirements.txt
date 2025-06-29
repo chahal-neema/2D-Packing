@@ -1,0 +1,7 @@
+numpy>=1.21.0
+matplotlib>=3.5.0
+ortools>=9.14.0
+plotly>=5.0.0
+pytest>=7.0.0
+scipy>=1.7.0
+streamlit>=1.28.0
